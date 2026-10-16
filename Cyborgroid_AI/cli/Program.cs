@@ -123,15 +123,10 @@ internal static class Commands
     public static int Ask(AppConfig cfg, string question)
     {
         using var engine = new Engine(cfg);
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; Engine.Cancel(); };
+        var agent = new Agent(cfg, engine, new ChatSession(cfg), interactive: false);
+        Console.CancelKeyPress += (_, e) => e.Cancel = agent.Interrupt();
         engine.Start();
-        var session = new ChatSession(cfg);
-        session.Turns.Add(new ChatMessage("user", question.Trim()));
-        engine.Chat(session.Prompt(), (kind, piece) =>
-        {
-            if (kind == PieceKind.Content) Console.Write(piece);
-        });
-        Console.WriteLine();
+        agent.Send(question.Trim());
         return 0;
     }
 

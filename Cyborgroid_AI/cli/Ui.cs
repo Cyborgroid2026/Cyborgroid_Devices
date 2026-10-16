@@ -30,6 +30,8 @@ internal static class Ui
            """)));
         var net = Native.NetworkOnline ? Yellow("온라인 (대화에는 사용 안 함)") : Green("오프라인 ✓");
         Console.WriteLine(Dim($"  모델 {cfg.Model} · 네트워크 {net}") + Dim(" · /help 도움말 · /exit 종료"));
+        if (cfg.Assistant.Tools)
+            Console.WriteLine(Dim($"  에이전트 모드 · 작업 폴더 {Tools.WorkDir} · 파일 수정·명령 실행 전에 묻습니다 (/tools off 로 끄기)"));
         Console.WriteLine();
     }
 

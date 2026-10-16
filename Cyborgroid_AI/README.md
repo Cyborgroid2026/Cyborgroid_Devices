@@ -1,6 +1,7 @@
-# Cyborgroid AI — 오프라인 로컬 Personal AI (터미널)
+# Cyborgroid AI — 오프라인 로컬 Personal AI 에이전트 (터미널)
 
-`cyborgroid` 를 입력하면 네트워크/와이파이가 꺼져 있어도 동작하는 개인 AI입니다.
+`cyborgroid` 를 입력하면 네트워크/와이파이가 꺼져 있어도 동작하는 개인 AI 에이전트입니다.
+대화만 하는 것이 아니라, 실행한 폴더에서 파일을 읽고·검색하고·수정하고 명령을 실행할 수 있습니다.
 네트워크는 **업데이트(`sudo cyborgroid update`)에만** 사용합니다.
 
 > **모델에 대해:** Claude Opus 5.5 같은 Claude 모델은 가중치가 공개되지 않아
@@ -46,8 +47,30 @@ sudo cyborgroid update          모델 업데이트
      --model <이름> | --engine | --app | --all | --check
 ```
 
-대화 중 명령: `/think` 깊은 추론, `/showthink` 추론 과정 보기, `/clear`, `/sessions`, `/load <id>`, `/status`, `/exit`.
+대화 중 명령: `/think` 깊은 추론, `/showthink` 추론 과정 보기, `/tools [on|off]` 에이전트 도구 전환,
+`/clear`, `/sessions`, `/load <id>`, `/status`, `/exit`.
 답변 중 `Ctrl+C` 를 누르면 생성을 멈춥니다.
+
+## 에이전트 도구
+
+모델은 필요할 때 아래 도구를 스스로 호출하고, 결과를 보고 다음 행동을 정합니다(요청당 최대 `assistant.max_steps` 단계).
+작업 폴더는 `cyborgroid` 를 실행한 현재 폴더입니다.
+
+| 도구 | 하는 일 | 확인 |
+|---|---|---|
+| `read_file` | 파일 읽기 (줄 번호 포함) | 묻지 않음 |
+| `list_dir` | 폴더 목록 | 묻지 않음 |
+| `search` | 정규식으로 파일 내용 검색 | 묻지 않음 |
+| `write_file` | 파일 생성·덮어쓰기 | **매번 묻기** |
+| `edit_file` | 파일의 한 부분 교체 | **매번 묻기** |
+| `run_shell` | bash 명령 실행 (기본 제한 120초) | **매번 묻기** |
+
+확인 질문에서 `y` 는 이번 한 번, `a` 는 이 대화 동안 같은 도구를 계속 허용, `n` (또는 Enter) 은 거부입니다.
+명령 실행 중 `Ctrl+C` 를 누르면 명령을 멈춥니다. root(sudo)로 실행하면 수정·명령 도구는 거부됩니다.
+대화만 하려면 `/tools off` 또는 설정에서 `assistant.tools: false`.
+
+> 도구 사용에는 컨텍스트가 많이 듭니다. 기존 설치의 `engine.context` 가 8192 라면 16384 이상으로 올리는 것을 권장합니다
+> (Qwen3-8B는 32768까지 지원, VRAM 사용량이 늘어납니다).
 
 ## sudo가 필요한 경우
 
@@ -69,7 +92,8 @@ sudo cyborgroid update          모델 업데이트
 ## 설정 (`/etc/cyborgroid/config.json`)
 
 주요 항목: `model`, `engine.context`(컨텍스트 길이), `engine.gpu_layers`(GPU에 올릴 레이어 수, 0 = CPU),
-`assistant.system_prompt`, `assistant.think`, `catalog`(다운로드할 수 있는 모델 목록).
+`assistant.system_prompt`, `assistant.think`, `assistant.tools`(에이전트 도구, 기본 true), `assistant.max_steps`,
+`catalog`(다운로드할 수 있는 모델 목록).
 테스트용으로 다른 설정 파일을 쓰려면 `CYBORGROID_CONFIG=/path/config.json` 을 지정합니다.
 
 ## 개발

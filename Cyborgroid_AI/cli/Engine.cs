@@ -55,7 +55,7 @@ public sealed unsafe class Engine : IDisposable
             ["cache_prompt"] = true,
             ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = a.Think },
         };
-        if (tools is { Count: > 0 }) body["tools"] = tools;
+        if (tools is { Count: > 0 }) body["tools"] = tools.DeepClone();
 
         Action<PieceKind, string> sink = (kind, piece) =>
         {

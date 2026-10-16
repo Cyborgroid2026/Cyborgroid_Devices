@@ -8,23 +8,23 @@ internal sealed class Repl
     private readonly AppConfig _cfg;
     private readonly Engine _engine;
     private readonly ChatSession _session;
-    private volatile bool _generating;
+    private readonly Agent _agent;
 
     public Repl(AppConfig cfg, Engine engine)
     {
         _cfg = cfg;
         _engine = engine;
         _session = new ChatSession(cfg);
+        _agent = new Agent(cfg, engine, _session, interactive: true);
     }
 
     public int Run()
     {
         Console.CancelKeyPress += (_, e) =>
         {
-            if (_generating)
+            if (_agent.Interrupt())
             {
                 e.Cancel = true;
-                Engine.Cancel();
             }
             else
             {
@@ -48,7 +48,8 @@ internal sealed class Repl
                 if (!Command(input)) break;
                 continue;
             }
-            Send(input);
+            _agent.Send(input);
+            _session.Save();
         }
         if (_session.Turns.Count > 0) _session.Save();
         Console.WriteLine(Ui.Dim("안녕히 가세요."));
@@ -74,66 +75,6 @@ internal sealed class Repl
         }
     }
 
-    private void Send(string text)
-    {
-        _session.Turns.Add(new ChatMessage("user", text));
-        var answer = new StringBuilder();
-        var thinkingShown = false;
-        var inReasoning = false;
-
-        Console.Write(Ui.Bold(Ui.Cyan($"{_cfg.Assistant.Name} ❯ ")));
-        _generating = true;
-        ChatResult result;
-        try
-        {
-            result = _engine.Chat(_session.Prompt(), (kind, piece) =>
-            {
-                if (kind == PieceKind.Reasoning)
-                {
-                    if (_cfg.Assistant.ShowThinking)
-                    {
-                        if (!inReasoning) Console.Write(Ui.Dim("\n  [생각] "));
-                        inReasoning = true;
-                        Console.Write(Ui.Dim(piece));
-                    }
-                    else if (!thinkingShown)
-                    {
-                        Console.Write(Ui.Dim("(생각 중…) "));
-                        thinkingShown = true;
-                    }
-                    return;
-                }
-                if (inReasoning)
-                {
-                    Console.Write("\n\n");
-                    inReasoning = false;
-                }
-                answer.Append(piece);
-                Console.Write(piece);
-            });
-        }
-        catch (CyborgroidException ex)
-        {
-            Console.WriteLine();
-            Ui.Error(ex.Message);
-            _session.Turns.RemoveAt(_session.Turns.Count - 1);
-            return;
-        }
-        finally
-        {
-            _generating = false;
-        }
-
-        Console.WriteLine();
-        if (result == ChatResult.Cancelled) Console.WriteLine(Ui.Dim("  (중단됨)"));
-        if (answer.Length > 0)
-            _session.Turns.Add(new ChatMessage("assistant", answer.ToString().Trim()));
-        else
-            _session.Turns.RemoveAt(_session.Turns.Count - 1);
-        Console.WriteLine();
-        _session.Save();
-    }
-
     /// <summary>Handles a slash command. Returns false to exit.</summary>
     private bool Command(string input)
     {
@@ -148,6 +89,7 @@ internal sealed class Repl
                       /clear            새 대화 시작
                       /think [on|off]   깊은 추론 모드 전환 (느리지만 더 정확)
                       /showthink        추론 과정 표시 전환
+                      /tools [on|off]   에이전트 도구(파일 읽기·수정, 명령 실행) 전환
                       /system [텍스트]  시스템 프롬프트 보기/변경 (이번 실행에만)
                       /system save      현재 프롬프트를 내 기본값으로 저장 (sudo 불필요)
                       /system reset     내 프롬프트를 지우고 기본값으로 복귀
@@ -170,6 +112,10 @@ internal sealed class Repl
             case "/showthink":
                 _cfg.Assistant.ShowThinking = !_cfg.Assistant.ShowThinking;
                 Ui.Ok("추론 과정 표시: " + (_cfg.Assistant.ShowThinking ? "켜짐" : "꺼짐"));
+                break;
+            case "/tools":
+                _cfg.Assistant.Tools = arg switch { "on" => true, "off" => false, _ => !_cfg.Assistant.Tools };
+                Ui.Ok("에이전트 도구: " + (_cfg.Assistant.Tools ? $"켜짐 (작업 폴더 {Tools.WorkDir})" : "꺼짐 (대화만)"));
                 break;
             case "/system":
                 SystemCommand(arg);
