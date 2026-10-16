@@ -1,0 +1,3 @@
+# VS Code IntelliSense cache
+.vscode/browse.vc.db*
+.vscode/ipch/
