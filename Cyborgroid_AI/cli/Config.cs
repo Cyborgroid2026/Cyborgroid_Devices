@@ -8,7 +8,7 @@ public sealed class EngineConfig
     public string Server { get; set; } = "/opt/cyborgroid/engine/bin/llama-server";
     public string Host { get; set; } = "127.0.0.1";
     public int Port { get; set; } = 8765;
-    public int Context { get; set; } = 8192;
+    public int Context { get; set; } = 16384;
     public int Threads { get; set; } = 0;
     public int GpuLayers { get; set; } = 0;
     public List<string> ExtraArgs { get; set; } = new();
@@ -45,6 +45,10 @@ public sealed class AssistantConfig
     public int MaxTokens { get; set; } = 4096;
     public bool Think { get; set; } = false;
     public bool ShowThinking { get; set; } = false;
+    /// <summary>Agent mode: let the model read files, edit them and run commands (with confirmation).</summary>
+    public bool Tools { get; set; } = true;
+    /// <summary>Upper bound on model calls per user message, so a confused model cannot loop forever.</summary>
+    public int MaxSteps { get; set; } = 30;
 }
 
 public sealed class UpdateConfig

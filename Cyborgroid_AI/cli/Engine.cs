@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace Cyborgroid;
 
-public enum PieceKind { Content = 0, Reasoning = 1 }
+public enum PieceKind { Content = 0, Reasoning = 1, ToolCall = 2 }
 
 public enum ChatResult { Complete, Cancelled }
 
@@ -37,16 +37,17 @@ public sealed unsafe class Engine : IDisposable
         _started = rc == 1;
     }
 
-    public ChatResult Chat(IEnumerable<ChatMessage> messages, Action<PieceKind, string> onPiece)
+    /// <summary>
+    /// Streams one model reply. Text goes to <paramref name="onPiece"/>; tool calls the model
+    /// asks for are added to <paramref name="toolCalls"/> when the reply ends.
+    /// </summary>
+    public ChatResult Chat(IEnumerable<ChatMessage> messages, Action<PieceKind, string> onPiece,
+        JsonArray? tools = null, List<ToolCall>? toolCalls = null)
     {
         var a = _cfg.Assistant;
         var body = new JsonObject
         {
-            ["messages"] = new JsonArray(messages.Select(m => (JsonNode)new JsonObject
-            {
-                ["role"] = m.Role,
-                ["content"] = m.Content,
-            }).ToArray()),
+            ["messages"] = new JsonArray(messages.Select(ToJson).ToArray()),
             ["stream"] = true,
             ["temperature"] = a.Think ? Math.Min(a.Temperature, 0.6) : a.Temperature,
             ["top_p"] = a.Think ? 0.95 : a.TopP,
@@ -54,8 +55,20 @@ public sealed unsafe class Engine : IDisposable
             ["cache_prompt"] = true,
             ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = a.Think },
         };
+        if (tools is { Count: > 0 }) body["tools"] = tools;
 
-        var handle = GCHandle.Alloc(onPiece);
+        Action<PieceKind, string> sink = (kind, piece) =>
+        {
+            if (kind != PieceKind.ToolCall)
+            {
+                onPiece(kind, piece);
+                return;
+            }
+            var f = piece.Split('\x1f', 3);
+            if (f.Length < 3) return;
+            toolCalls?.Add(new ToolCall(f[0].Length > 0 ? f[0] : $"call_{Guid.NewGuid():N}"[..13], f[1], f[2]));
+        };
+        var handle = GCHandle.Alloc(sink);
         try
         {
             var rc = Native.cy_chat_stream(_cfg.Engine.Host, (ushort)_cfg.Engine.Port,
@@ -71,6 +84,20 @@ public sealed unsafe class Engine : IDisposable
         {
             handle.Free();
         }
+    }
+
+    private static JsonNode ToJson(ChatMessage m)
+    {
+        var o = new JsonObject { ["role"] = m.Role, ["content"] = m.Content };
+        if (m.ToolCallId is not null) o["tool_call_id"] = m.ToolCallId;
+        if (m.ToolCalls is { Count: > 0 })
+            o["tool_calls"] = new JsonArray(m.ToolCalls.Select(c => (JsonNode)new JsonObject
+            {
+                ["id"] = c.Id,
+                ["type"] = "function",
+                ["function"] = new JsonObject { ["name"] = c.Name, ["arguments"] = c.Arguments },
+            }).ToArray());
+        return o;
     }
 
     public static void Cancel() => Native.cy_cancel();

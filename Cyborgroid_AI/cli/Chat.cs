@@ -2,7 +2,10 @@ using System.Text.Json;
 
 namespace Cyborgroid;
 
-public sealed record ChatMessage(string Role, string Content);
+public sealed record ToolCall(string Id, string Name, string Arguments);
+
+/// <summary>One message. Assistant turns may carry tool calls; "tool" turns answer one by id.</summary>
+public sealed record ChatMessage(string Role, string Content, List<ToolCall>? ToolCalls = null, string? ToolCallId = null);
 
 /// <summary>A conversation: system prompt + turns, trimmed to fit the context window.</summary>
 public sealed class ChatSession
@@ -17,22 +20,23 @@ public sealed class ChatSession
 
     public static string SessionsDir => Path.Combine(AppConfig.UserDataDir, "sessions");
 
-    public IEnumerable<ChatMessage> Prompt()
+    public IEnumerable<ChatMessage> Prompt(int reserveChars = 0)
     {
         var system = _cfg.Assistant.EffectiveSystemPrompt +
                      $"\nCurrent local date and time: {DateTime.Now:yyyy-MM-dd HH:mm (ddd)}.";
-        // Rough budget: ~3 chars per token, leaving room for the reply.
-        var budget = Math.Max(2000, (_cfg.Engine.Context - _cfg.Assistant.MaxTokens) * 3);
+        if (_cfg.Assistant.Tools) system += "\n\n" + Tools.SystemPrompt();
+        // Rough budget: ~3 chars per token, leaving room for the reply and tool definitions.
+        var budget = Math.Max(2000, (_cfg.Engine.Context - _cfg.Assistant.MaxTokens) * 3 - reserveChars);
         var kept = new List<ChatMessage>();
         var used = system.Length;
         for (var i = Turns.Count - 1; i >= 0; i--)
         {
-            used += Turns[i].Content.Length;
+            used += Turns[i].Content.Length + (Turns[i].ToolCalls?.Sum(c => c.Arguments.Length + c.Name.Length) ?? 0);
             if (used > budget && kept.Count > 0) break;
             kept.Insert(0, Turns[i]);
         }
-        // A conversation must not start with an assistant turn.
-        while (kept.Count > 1 && kept[0].Role == "assistant") kept.RemoveAt(0);
+        // A conversation must start with a user turn; a tool result needs the call before it.
+        while (kept.Count > 1 && kept[0].Role != "user") kept.RemoveAt(0);
         return kept.Prepend(new ChatMessage("system", system));
     }
 

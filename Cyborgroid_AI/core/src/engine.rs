@@ -142,6 +142,46 @@ pub fn stop() -> bool {
 pub enum Piece<'a> {
     Content(&'a str),
     Reasoning(&'a str),
+    /// A complete tool call, emitted once the stream ends.
+    ToolCall { id: &'a str, name: &'a str, arguments: &'a str },
+}
+
+/// A tool call assembled from streamed `delta.tool_calls` fragments.
+#[derive(Default)]
+struct PendingCall {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
+/// Merges one `delta.tool_calls` array into the calls collected so far.
+fn merge_tool_calls(calls: &mut Vec<PendingCall>, deltas: &json::Json) {
+    let mut i = 0;
+    while let Some(d) = deltas.at(i) {
+        i += 1;
+        let index = match d.get("index") {
+            Some(json::Json::Num(n)) if *n >= 0.0 => *n as usize,
+            _ => calls.len().saturating_sub(1),
+        };
+        if index > 64 {
+            continue;
+        }
+        while calls.len() <= index {
+            calls.push(PendingCall::default());
+        }
+        let call = &mut calls[index];
+        if let Some(id) = d.get("id").and_then(|v| v.as_str()) {
+            call.id = id.to_string();
+        }
+        if let Some(f) = d.get("function") {
+            if let Some(n) = f.get("name").and_then(|v| v.as_str()) {
+                call.name.push_str(n);
+            }
+            if let Some(a) = f.get("arguments").and_then(|v| v.as_str()) {
+                call.arguments.push_str(a);
+            }
+        }
+    }
 }
 
 /// Posts an OpenAI-style chat request with `"stream": true` and forwards each delta.
@@ -155,6 +195,7 @@ pub fn chat(
     let mut line: Vec<u8> = Vec::new();
     let mut error_body: Vec<u8> = Vec::new();
     let mut failure: Option<String> = None;
+    let mut calls: Vec<PendingCall> = Vec::new();
 
     let outcome = http::request(
         host,
@@ -204,6 +245,9 @@ pub fn chat(
                         on_piece(Piece::Content(c));
                     }
                 }
+                if let Some(t) = delta.get("tool_calls") {
+                    merge_tool_calls(&mut calls, t);
+                }
             }
             true
         },
@@ -221,6 +265,32 @@ pub fn chat(
                 .unwrap_or(text);
             return Err(format!("engine returned HTTP {}: {}", code, msg));
         }
+        for c in calls.iter().filter(|c| !c.name.is_empty()) {
+            on_piece(Piece::ToolCall { id: &c.id, name: &c.name, arguments: &c.arguments });
+        }
     }
     Ok(outcome)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merges_streamed_tool_call_fragments() {
+        let mut calls = Vec::new();
+        for ev in [
+            r#"[{"index":0,"id":"call_1","type":"function","function":{"name":"read_file","arguments":""}}]"#,
+            r#"[{"index":0,"function":{"arguments":"{\"path\":"}}]"#,
+            r#"[{"index":0,"function":{"arguments":"\"a.txt\"}"}}]"#,
+            r#"[{"index":1,"id":"call_2","function":{"name":"list_dir","arguments":"{}"}}]"#,
+        ] {
+            merge_tool_calls(&mut calls, &json::parse(ev).unwrap());
+        }
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].id, "call_1");
+        assert_eq!(calls[0].name, "read_file");
+        assert_eq!(calls[0].arguments, r#"{"path":"a.txt"}"#);
+        assert_eq!(calls[1].name, "list_dir");
+    }
 }

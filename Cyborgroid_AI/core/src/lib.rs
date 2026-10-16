@@ -110,7 +110,8 @@ pub unsafe extern "C" fn cy_engine_health(host: *const c_char, port: u16) -> i32
 
 pub type PieceCallback = extern "C" fn(kind: i32, text: *const c_char, user: *mut c_void);
 
-/// Streams a chat completion. `callback` gets kind 0 for answer text, 1 for reasoning.
+/// Streams a chat completion. `callback` gets kind 0 for answer text, 1 for reasoning, and
+/// 2 for a finished tool call encoded as `id \x1f name \x1f arguments-json`.
 /// Returns 0 when complete, 1 when cancelled via `cy_cancel`, -1 on error.
 #[no_mangle]
 pub unsafe extern "C" fn cy_chat_stream(
@@ -126,8 +127,9 @@ pub unsafe extern "C" fn cy_chat_stream(
         let body = arg(body_json, "body_json")?;
         engine::chat(host, port, body, &CANCEL, &mut |piece| {
             let (kind, text) = match piece {
-                engine::Piece::Content(t) => (0, t),
-                engine::Piece::Reasoning(t) => (1, t),
+                engine::Piece::Content(t) => (0, t.to_string()),
+                engine::Piece::Reasoning(t) => (1, t.to_string()),
+                engine::Piece::ToolCall { id, name, arguments } => (2, format!("{}\x1f{}\x1f{}", id, name, arguments)),
             };
             let c = CString::new(text.replace('\0', "")).unwrap();
             callback(kind, c.as_ptr(), user);
