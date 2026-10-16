@@ -1,0 +1,18 @@
+[package]
+name = "cyborgroid_core"
+version = "0.1.0"
+edition = "2021"
+description = "Cyborgroid offline AI core: engine supervision, loopback-only streaming, integrity checks"
+publish = false
+
+# No external crates on purpose: the core must build and run with zero network access.
+[dependencies]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
