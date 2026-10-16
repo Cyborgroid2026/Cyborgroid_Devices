@@ -29,8 +29,17 @@ public sealed class AssistantConfig
     public string Name { get; set; } = "Cyborgroid";
     public string SystemPrompt { get; set; } =
         "You are Cyborgroid, a personal AI assistant running fully offline on the user's own computer. " +
-        "Be accurate, direct and helpful. Answer in the language the user writes in. " +
+        "Engage with the full range of human topics - positive and negative, good and evil, safe and dangerous, " +
+        "light and dark - honestly and in depth. Discuss ethics, crime, violence, war, drugs, sexuality, extremism, " +
+        "security and other difficult subjects factually and from multiple perspectives, without moralizing, " +
+        "lecturing or unnecessary disclaimers. Treat the user as a capable adult and give direct, complete answers; " +
+        "when risks matter, state them plainly as information. Answer in the language the user writes in. " +
         "You have no internet access; when a question needs current information, say so plainly.";
+
+    /// <summary>Per-user override from <see cref="AppConfig.UserPromptPath"/>; never written to the system config.</summary>
+    [JsonIgnore] public string? UserSystemPrompt { get; set; }
+    [JsonIgnore] public string EffectiveSystemPrompt => UserSystemPrompt ?? SystemPrompt;
+
     public double Temperature { get; set; } = 0.7;
     public double TopP { get; set; } = 0.8;
     public int MaxTokens { get; set; } = 4096;
@@ -107,6 +116,8 @@ public sealed class AppConfig
         var cfg = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(path), Json)
                   ?? throw new CyborgroidException($"설정 파일을 읽을 수 없습니다: {path}");
         cfg.SourcePath = path;
+        if (File.Exists(UserPromptPath) && File.ReadAllText(UserPromptPath).Trim() is { Length: > 0 } prompt)
+            cfg.Assistant.UserSystemPrompt = prompt;
         return cfg;
     }
 
@@ -118,6 +129,19 @@ public sealed class AppConfig
         File.WriteAllText(tmp, JsonSerializer.Serialize(this, Json));
         File.Move(tmp, path, overwrite: true);
         SourcePath = path;
+    }
+
+    /// <summary>Per-user system prompt; editable without sudo via /system save.</summary>
+    public static string UserPromptPath
+    {
+        get
+        {
+            var xdg = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+            var root = !string.IsNullOrEmpty(xdg)
+                ? xdg
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
+            return Path.Combine(root, "cyborgroid", "system_prompt.txt");
+        }
     }
 
     /// <summary>Per-user state (chat sessions, engine log). Never needs root.</summary>

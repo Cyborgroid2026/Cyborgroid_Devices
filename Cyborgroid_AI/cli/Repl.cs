@@ -149,6 +149,8 @@ internal sealed class Repl
                       /think [on|off]   깊은 추론 모드 전환 (느리지만 더 정확)
                       /showthink        추론 과정 표시 전환
                       /system [텍스트]  시스템 프롬프트 보기/변경 (이번 실행에만)
+                      /system save      현재 프롬프트를 내 기본값으로 저장 (sudo 불필요)
+                      /system reset     내 프롬프트를 지우고 기본값으로 복귀
                       /sessions         저장된 대화 목록
                       /load <id>        저장된 대화 불러오기
                       /status           엔진·모델·네트워크 상태
@@ -170,12 +172,7 @@ internal sealed class Repl
                 Ui.Ok("추론 과정 표시: " + (_cfg.Assistant.ShowThinking ? "켜짐" : "꺼짐"));
                 break;
             case "/system":
-                if (arg.Length > 0)
-                {
-                    _cfg.Assistant.SystemPrompt = arg;
-                    Ui.Ok("시스템 프롬프트를 변경했습니다.");
-                }
-                else Console.WriteLine(Ui.Dim(_cfg.Assistant.SystemPrompt));
+                SystemCommand(arg);
                 break;
             case "/sessions":
                 foreach (var (id, when, preview) in ChatSession.List().Take(20))
@@ -197,5 +194,32 @@ internal sealed class Repl
                 break;
         }
         return true;
+    }
+
+    private void SystemCommand(string arg)
+    {
+        var a = _cfg.Assistant;
+        var path = AppConfig.UserPromptPath;
+        switch (arg)
+        {
+            case "":
+                Console.WriteLine(Ui.Dim(a.UserSystemPrompt is null ? "[기본 프롬프트]" : $"[내 프롬프트: {path}]"));
+                Console.WriteLine(Ui.Dim(a.EffectiveSystemPrompt));
+                break;
+            case "save":
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, a.EffectiveSystemPrompt + "\n");
+                Ui.Ok($"저장했습니다: {path}");
+                break;
+            case "reset":
+                if (File.Exists(path)) File.Delete(path);
+                a.UserSystemPrompt = null;
+                Ui.Ok("기본 프롬프트로 돌아갔습니다.");
+                break;
+            default:
+                a.UserSystemPrompt = arg;
+                Ui.Ok("시스템 프롬프트를 변경했습니다. 계속 쓰려면 /system save");
+                break;
+        }
     }
 }

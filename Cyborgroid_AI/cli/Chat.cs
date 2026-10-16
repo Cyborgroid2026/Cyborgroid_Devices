@@ -19,7 +19,7 @@ public sealed class ChatSession
 
     public IEnumerable<ChatMessage> Prompt()
     {
-        var system = _cfg.Assistant.SystemPrompt +
+        var system = _cfg.Assistant.EffectiveSystemPrompt +
                      $"\nCurrent local date and time: {DateTime.Now:yyyy-MM-dd HH:mm (ddd)}.";
         // Rough budget: ~3 chars per token, leaving room for the reply.
         var budget = Math.Max(2000, (_cfg.Engine.Context - _cfg.Assistant.MaxTokens) * 3);
